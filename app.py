@@ -1,91 +1,86 @@
-# app.py
 from flask import Flask, request, jsonify
 import pandas as pd
-import numpy as np
 
 app = Flask(__name__)
 
-# Load your dataset once at startup
-data_url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"  # <-- replace this
-data = pd.read_excel(data_url)
+# Load your updated master data
+url = "https://raw.githubusercontent.com/your-username/your-repo-name/main/Master%20Data%20File.xlsx"
+data = pd.read_excel(url)
 
-@app.route("/", methods=["GET"])
+# Normalize columns to ensure all required fields exist
+required_columns = ['state', 'city', 'walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'emp_score', 'positive', 'negative']
+assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
+
+@app.route('/', methods=['GET'])
 def home():
-    return "New Leaf API is live!"
+    return "New Leaf API is Running!"
 
-@app.route("/match", methods=["POST"])
-def match_cities():
+@app.route('/match', methods=['POST'])
+def match():
+    content = request.get_json()
+
+    if not content or 'answers' not in content:
+        return jsonify({"error": "No answers provided"}), 400
+
+    answers = content['answers']
+
     try:
-        req = request.get_json()
-        answers = req.get("answers", [])
+        safety = int(answers[0])
+        employment = int(answers[1])
+        diversity = int(answers[2])
+        affordability = int(answers[3])
+        walkability = int(answers[4])
+        remote_work = int(answers[5])
+        density_preference = int(answers[6])
+        density_importance = int(answers[7])
+        politics_preference = int(answers[8])
+        politics_importance = int(answers[9])
+        city_count = int(answers[10])
+        show_avoid = answers[11]
 
-        if not answers or len(answers) < 10:
-            return jsonify({"error": "Invalid input"}), 400
+        scores = []
 
-        # Extract user's preferences
-        weights = {
-            "walk_score": float(answers[0]),
-            "emp_score": float(answers[1]),
-            "diversity_score": float(answers[2]),
-            "cost_score": float(answers[3]),
-            "walk_score_2": float(answers[4]),  # for walkability again
-            "wfh_score": float(answers[5]),
-            "density_score": float(answers[6]),
-            "density_importance": float(answers[7]),
-            "politics_score": float(answers[8]),
-            "politics_importance": float(answers[9])
-        }
+        for _, row in data.iterrows():
+            score = 0
 
-        city_count = int(answers[10]) if len(answers) > 10 else 5
-        show_avoid = bool(answers[11]) if len(answers) > 11 else False
+            # Regular categories (0-100 scales)
+            score += safety * (row['walk_score'] / 100)  # Walk Score proxy for safety
+            score += employment * (row['emp_score'] / 100)
+            score += diversity * (row['diversity_score'] / 100)
+            score += affordability * (row['cost_score'] / 100)
+            score += walkability * (row['walk_score'] / 100)
+            score += remote_work * (row['wfh_score'] / 100)
 
-        # Normalize importance values (make total weighting sum to 1)
-        importance = np.array([
-            weights["walk_score"],
-            weights["emp_score"],
-            weights["diversity_score"],
-            weights["cost_score"],
-            weights["walk_score_2"],
-            weights["wfh_score"],
-            weights["density_importance"],
-            weights["politics_importance"]
-        ])
-        importance_sum = importance.sum()
-        if importance_sum == 0:
-            importance_sum = 1  # avoid division by zero
-        normalized_importance = importance / importance_sum
+            # Density (1 to 5 scale)
+            density_difference = abs(density_preference - row['density_score'])
+            density_points = max(0, 100 - (density_difference * 20))
+            score += density_importance * (density_points / 100)
 
-        # Calculate weighted scores
-        scores = (
-            (data["walk_score"] * normalized_importance[0]) +
-            (data["emp_score"] * normalized_importance[1]) +
-            (data["diversity_score"] * normalized_importance[2]) +
-            (data["cost_score"] * normalized_importance[3]) +
-            (data["walk_score"] * normalized_importance[4]) +
-            (data["wfh_score"] * normalized_importance[5]) +
-            (100 - abs(data["density_score"] - weights["density_score"]*25)) * normalized_importance[6] +
-            (100 - abs(data["politics_score"] - weights["politics_score"]*12.5)) * normalized_importance[7]
-        )
+            # Politics (1 to 5 scaled manually, assuming you scaled already)
+            politics_mapped_user = politics_preference  # from 0-8 to 1-5
+            politics_mapped_row = row['politics_score']  # Already 1-5
+            politics_difference = abs(politics_mapped_user - politics_mapped_row)
+            politics_points = max(0, 100 - (politics_difference * 20))
+            score += politics_importance * (politics_points / 100)
 
-        data["final_score"] = scores
+            scores.append({
+                "state": row['state'],
+                "city": row['city'],
+                "score": score,
+                "positive": row['positive'],
+                "negative": row['negative']
+            })
 
-        # Get good matches (top scoring)
-        good_matches = data.sort_values(by="final_score", ascending=False).head(city_count)
-        good_matches_list = good_matches[["city", "state", "positive"]].to_dict(orient="records")
+        # Sort scores highest first
+        scores = sorted(scores, key=lambda x: x['score'], reverse=True)
 
-        # Get avoid matches (lowest scoring)
-        bad_matches_list = []
-        if show_avoid:
-            bad_matches = data.sort_values(by="final_score", ascending=True).head(city_count)
-            bad_matches_list = bad_matches[["city", "state", "negative"]].to_dict(orient="records")
+        good_matches = scores[:city_count]
+        bad_matches = scores[-city_count:] if show_avoid else []
 
-        return jsonify({
-            "good_matches": good_matches_list,
-            "bad_matches": bad_matches_list
-        })
+        return jsonify({"good_matches": good_matches, "bad_matches": bad_matches})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
