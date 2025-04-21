@@ -1,64 +1,67 @@
 from flask import Flask, request, jsonify
 import pandas as pd
-import requests
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
-# URL to your master file on GitHub (replace with your real URL)
-MASTER_FILE_URL = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
+# Load your master data file once when the app starts
+url = 'https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_file.xlsx'
+data = pd.read_excel(url)
 
-# Load the master data once when app starts
-print("Loading master data...")
-master_df = pd.read_excel(MASTER_FILE_URL)
-print(f"Loaded {len(master_df)} cities.")
+# Simple helper to normalize scores
+def normalize(val, min_val=0, max_val=8):
+    return (float(val) - min_val) / (max_val - min_val)
 
-# Normalization helper (0-1 scaling)
-def normalize(series):
-    return (series - series.min()) / (series.max() - series.min())
-
-# Pre-normalize numerical columns
-score_columns = ["walk_score", "cost_score", "density_score", "diversity_score", "politics_score", "wfh_score", "emp_score"]
-for col in score_columns:
-    master_df[col] = normalize(master_df[col])
-
-@app.route('/')
-def home():
-    return "Backend is live."
-
-@app.route('/match', methods=['POST'])
-def match():
-    data = request.json
-    print("Received user answers:", data)
-
+@app.route('/', methods=['POST'])
+def match_cities():
     try:
-        user_importance = data.get('importance', {})
-        num_results = int(data.get('num_results', 5))
-        show_avoid = bool(data.get('show_avoid', False))
+        content = request.get_json()
+        answers = content.get('answers', [])
 
-        # Calculate match score
-        df = master_df.copy()
-        df['match_score'] = 0
-
-        for feature in score_columns:
-            user_weight = user_importance.get(feature, 5)  # Default medium importance if missing
-            df['match_score'] += df[feature] * user_weight
-
-        # Sort and pick top matches
-        top_matches = df.sort_values(by='match_score', ascending=False).head(num_results)
-
-        result = {
-            "matches": top_matches[["city", "state", "positive"]].to_dict(orient='records')
+        # Separate the answers
+        weights = {
+            'safety': normalize(answers[0]),
+            'employment': normalize(answers[1]),
+            'diversity': normalize(answers[2]),
+            'affordability': normalize(answers[3]),
+            'walkability': normalize(answers[4]),
+            'wfh': normalize(answers[5]),
+            'density_pref': normalize(answers[6], 0, 4),
+            'density_importance': normalize(answers[7]),
+            'politics_pref': normalize(answers[8], 0, 8),
+            'politics_importance': normalize(answers[9]),
         }
+        show_top_n = int(answers[10])
+        show_avoid = answers[11]
 
+        # Calculate total score
+        df = data.copy()
+        df['total_score'] = (
+            df['walk_score'] * weights['walkability'] +
+            df['cost_score'] * weights['affordability'] +
+            df['density_score'] * (1 - abs(df['density_score'] - weights['density_pref'])) * weights['density_importance'] +
+            df['diversity_score'] * weights['diversity'] +
+            df['politics_score'] * (1 - abs(df['politics_score'] - weights['politics_pref'])) * weights['politics_importance'] +
+            df['wfh_score'] * weights['wfh'] +
+            df['emp_score'] * weights['employment']
+        )
+
+        df_sorted = df.sort_values('total_score', ascending=False)
+
+        good_matches = df_sorted.head(show_top_n)[['city', 'state', 'positive']].to_dict(orient='records')
+
+        bad_matches = []
         if show_avoid:
-            bottom_matches = df.sort_values(by='match_score', ascending=True).head(num_results)
-            result["avoid"] = bottom_matches[["city", "state", "negative"]].to_dict(orient='records')
+            bad_matches = df_sorted.tail(show_top_n)[['city', 'state', 'negative']].to_dict(orient='records')
 
-        return jsonify(result)
+        return jsonify({
+            "good_matches": good_matches,
+            "bad_matches": bad_matches
+        })
 
     except Exception as e:
-        print("Error:", e)
-        return jsonify({"error": "Something went wrong during matching."}), 500
+        return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
