@@ -6,7 +6,7 @@ import numpy as np
 app = Flask(__name__)
 
 # Load your dataset once at startup
-data_url = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/Master%20Data%20File.xlsx"  # <-- replace this
+data_url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"  # <-- replace this
 data = pd.read_excel(data_url)
 
 @app.route("/", methods=["GET"])
