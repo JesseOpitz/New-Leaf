@@ -1,67 +1,91 @@
+# app.py
 from flask import Flask, request, jsonify
 import pandas as pd
-from flask_cors import CORS
+import numpy as np
 
 app = Flask(__name__)
-CORS(app)
 
-# Load your master data file once when the app starts
-url = 'https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx'
-data = pd.read_excel(url)
+# Load your dataset once at startup
+data_url = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/Master%20Data%20File.xlsx"  # <-- replace this
+data = pd.read_excel(data_url)
 
-# Simple helper to normalize scores
-def normalize(val, min_val=0, max_val=8):
-    return (float(val) - min_val) / (max_val - min_val)
+@app.route("/", methods=["GET"])
+def home():
+    return "New Leaf API is live!"
 
-@app.route('/', methods=['POST'])
+@app.route("/match", methods=["POST"])
 def match_cities():
     try:
-        content = request.get_json()
-        answers = content.get('answers', [])
+        req = request.get_json()
+        answers = req.get("answers", [])
 
-        # Separate the answers
+        if not answers or len(answers) < 10:
+            return jsonify({"error": "Invalid input"}), 400
+
+        # Extract user's preferences
         weights = {
-            'safety': normalize(answers[0]),
-            'employment': normalize(answers[1]),
-            'diversity': normalize(answers[2]),
-            'affordability': normalize(answers[3]),
-            'walkability': normalize(answers[4]),
-            'wfh': normalize(answers[5]),
-            'density_pref': normalize(answers[6], 0, 4),
-            'density_importance': normalize(answers[7]),
-            'politics_pref': normalize(answers[8], 0, 8),
-            'politics_importance': normalize(answers[9]),
+            "walk_score": float(answers[0]),
+            "emp_score": float(answers[1]),
+            "diversity_score": float(answers[2]),
+            "cost_score": float(answers[3]),
+            "walk_score_2": float(answers[4]),  # for walkability again
+            "wfh_score": float(answers[5]),
+            "density_score": float(answers[6]),
+            "density_importance": float(answers[7]),
+            "politics_score": float(answers[8]),
+            "politics_importance": float(answers[9])
         }
-        show_top_n = int(answers[10])
-        show_avoid = answers[11]
 
-        # Calculate total score
-        df = data.copy()
-        df['total_score'] = (
-            df['walk_score'] * weights['walkability'] +
-            df['cost_score'] * weights['affordability'] +
-            df['density_score'] * (1 - abs(df['density_score'] - weights['density_pref'])) * weights['density_importance'] +
-            df['diversity_score'] * weights['diversity'] +
-            df['politics_score'] * (1 - abs(df['politics_score'] - weights['politics_pref'])) * weights['politics_importance'] +
-            df['wfh_score'] * weights['wfh'] +
-            df['emp_score'] * weights['employment']
+        city_count = int(answers[10]) if len(answers) > 10 else 5
+        show_avoid = bool(answers[11]) if len(answers) > 11 else False
+
+        # Normalize importance values (make total weighting sum to 1)
+        importance = np.array([
+            weights["walk_score"],
+            weights["emp_score"],
+            weights["diversity_score"],
+            weights["cost_score"],
+            weights["walk_score_2"],
+            weights["wfh_score"],
+            weights["density_importance"],
+            weights["politics_importance"]
+        ])
+        importance_sum = importance.sum()
+        if importance_sum == 0:
+            importance_sum = 1  # avoid division by zero
+        normalized_importance = importance / importance_sum
+
+        # Calculate weighted scores
+        scores = (
+            (data["walk_score"] * normalized_importance[0]) +
+            (data["emp_score"] * normalized_importance[1]) +
+            (data["diversity_score"] * normalized_importance[2]) +
+            (data["cost_score"] * normalized_importance[3]) +
+            (data["walk_score"] * normalized_importance[4]) +
+            (data["wfh_score"] * normalized_importance[5]) +
+            (100 - abs(data["density_score"] - weights["density_score"]*25)) * normalized_importance[6] +
+            (100 - abs(data["politics_score"] - weights["politics_score"]*12.5)) * normalized_importance[7]
         )
 
-        df_sorted = df.sort_values('total_score', ascending=False)
+        data["final_score"] = scores
 
-        good_matches = df_sorted.head(show_top_n)[['city', 'state', 'positive']].to_dict(orient='records')
+        # Get good matches (top scoring)
+        good_matches = data.sort_values(by="final_score", ascending=False).head(city_count)
+        good_matches_list = good_matches[["city", "state", "positive"]].to_dict(orient="records")
 
-        bad_matches = []
+        # Get avoid matches (lowest scoring)
+        bad_matches_list = []
         if show_avoid:
-            bad_matches = df_sorted.tail(show_top_n)[['city', 'state', 'negative']].to_dict(orient='records')
+            bad_matches = data.sort_values(by="final_score", ascending=True).head(city_count)
+            bad_matches_list = bad_matches[["city", "state", "negative"]].to_dict(orient="records")
 
         return jsonify({
-            "good_matches": good_matches,
-            "bad_matches": bad_matches
+            "good_matches": good_matches_list,
+            "bad_matches": bad_matches_list
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 400
+        return jsonify({"error": str(e)}), 500
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+if __name__ == "__main__":
+    app.run(debug=True)
