@@ -7,8 +7,8 @@ app = Flask(__name__)
 CORS(app)
 
 # Load master data once when the app starts
-DATA_URL = "https://raw.githubusercontent.com/yourusername/yourrepo/main/Master%20Data%20File.csv"  # <-- update me
-master_df = pd.read_csv(DATA_URL)
+DATA_URL = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"  # <-- update me
+df = pd.read_excel(url)
 
 # Normalize scores to be between 0-1 (optional, depending on your data)
 for col in ['walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'emp_score']:
