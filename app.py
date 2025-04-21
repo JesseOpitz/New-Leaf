@@ -6,7 +6,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Load your master data file once when the app starts
-url = 'https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_file.xlsx'
+url = 'https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx'
 data = pd.read_excel(url)
 
 # Simple helper to normalize scores
