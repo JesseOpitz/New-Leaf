@@ -4,7 +4,7 @@ import pandas as pd
 app = Flask(__name__)
 
 # Load your updated master data
-url = "https://raw.githubusercontent.com/your-username/your-repo-name/main/Master%20Data%20File.xlsx"
+url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
 data = pd.read_excel(url)
 
 # Normalize columns to ensure all required fields exist
