@@ -5,7 +5,7 @@ import requests
 app = Flask(__name__)
 
 # URL to your master file on GitHub (replace with your real URL)
-MASTER_FILE_URL = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/Master%20Data%20File.xlsx"
+MASTER_FILE_URL = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
 
 # Load the master data once when app starts
 print("Loading master data...")
