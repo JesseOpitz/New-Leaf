@@ -2,5 +2,5 @@ flask
 pandas
 openpyxl
 requests
-gunicor
+gunicorn
 flask-cors
