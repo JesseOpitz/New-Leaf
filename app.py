@@ -10,8 +10,18 @@ url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xl
 data = pd.read_excel(url)
 
 # Normalize columns to ensure all required fields exist
-required_columns = ['state', 'city', 'walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'emp_score', 'positive', 'negative']
+required_columns = ['state', 'city', 'walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'crime_score', 'emp_score', 'positive', 'negative']
 assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
+
+# Min-max normalization (for scoring)
+walk_min, walk_max = data['walk_score'].min(), data['walk_score'].max()
+cost_min, cost_max = data['cost_score'].min(), data['cost_score'].max()
+diversity_min, diversity_max = data['diversity_score'].min(), data['diversity_score'].max()
+politics_min, politics_max = data['politics_score'].min(), data['politics_score'].max()
+wfh_min, wfh_max = data['wfh_score'].min(), data['wfh_score'].max()
+emp_min, emp_max = data['emp_score'].min(), data['emp_score'].max()
+safety_min, safety_max = data['crime_score'].min(), data['crime_score'].max()
+desnity_min, density_max = data['density_score'].min(), data['density_score'].max()
 
 @app.route('/', methods=['GET'])
 def home():
@@ -43,25 +53,25 @@ def match():
         for _, row in data.iterrows():
             score = 0
 
-            # Regular categories (0-100 scales)
-            score += safety * (row['walk_score'] / 100)
-            score += employment * (row['emp_score'] / 100)
-            score += diversity * (row['diversity_score'] / 100)
-            score += affordability * (row['cost_score'] / 100)
-            score += walkability * (row['walk_score'] / 100)
-            score += remote_work * (row['wfh_score'] / 100)
+            # Normalize features
+            walk_norm = (row['walk_score'] - walk_min) / (walk_max - walk_min)
+            cost_norm = (row['cost_score'] - cost_min) / (cost_max - cost_min)
+            diversity_norm = (row['diversity_score'] - diversity_min) / (diversity_max - diversity_min)
+            politics_norm = (row['politics_score'] - politics_min) / (politics_max - politics_min)
+            wfh_norm = (row['wfh_score'] - wfh_min) / (wfh_max - wfh_min)
+            emp_norm = (row['emp_score'] - emp_min) / (emp_max - emp_min)
+            safety_norm = (row['crime_score'] - safety_min) / (safety_max - safety_min)
+            density_norm = (row['density_score'] - density_min) / (density_max - density_min)
 
-            # Density (1 to 5 scale)
-            density_difference = abs(density_preference - row['density_score'])
-            density_points = max(0, 100 - (density_difference * 20))
-            score += (density_points / 100)
-
-            # Politics (1 to 5 scale)
-            politics_mapped_user = politics_preference
-            politics_mapped_row = row['politics_score']
-            politics_difference = abs(politics_mapped_user - politics_mapped_row)
-            politics_points = max(0, 100 - (politics_difference * 20))
-            score += (politics_points / 100)
+            # Regular scoring (normalized 0-1)
+            score += safety * safety_norm
+            score += employment * emp_norm
+            score += diversity * diversity_norm
+            score += affordability * cost_norm
+            score += walkability * walk_norm
+            score += remote_work * wfh_norm
+            score += politics_preference * politics_norm
+            score += density_preference * density_norm
 
             scores.append({
                 "state": row['state'],
@@ -71,43 +81,13 @@ def match():
                 "negative": row['negative']
             })
 
+        # Sort scores highest first
         scores = sorted(scores, key=lambda x: x['score'], reverse=True)
 
         good_matches = scores[:city_count]
         bad_matches = scores[-city_count:] if show_avoid else []
 
         return jsonify({"good_matches": good_matches, "bad_matches": bad_matches})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/all_scores', methods=['GET'])
-def all_scores():
-    try:
-        full_scores = []
-
-        for _, row in data.iterrows():
-            score = 0
-
-            # Regular categories (0-100 scales)
-            score += (row['walk_score'] / 100)
-            score += (row['emp_score'] / 100)
-            score += (row['diversity_score'] / 100)
-            score += (row['cost_score'] / 100)
-            score += (row['walk_score'] / 100)
-            score += (row['wfh_score'] / 100)
-
-            full_scores.append({
-                "state": row['state'],
-                "city": row['city'],
-                "calculated_score": score,
-                "positive": row['positive'],
-                "negative": row['negative']
-            })
-
-        full_scores = sorted(full_scores, key=lambda x: x['calculated_score'], reverse=True)
-
-        return jsonify({"all_scores": full_scores})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
