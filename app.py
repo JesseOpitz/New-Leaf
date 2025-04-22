@@ -21,7 +21,7 @@ politics_min, politics_max = data['politics_score'].min(), data['politics_score'
 wfh_min, wfh_max = data['wfh_score'].min(), data['wfh_score'].max()
 emp_min, emp_max = data['emp_score'].min(), data['emp_score'].max()
 safety_min, safety_max = data['crime_score'].min(), data['crime_score'].max()
-desnity_min, density_max = data['density_score'].min(), data['density_score'].max()
+density_min, density_max = data['density_score'].min(), data['density_score'].max()
 
 @app.route('/', methods=['GET'])
 def home():
