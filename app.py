@@ -4,6 +4,7 @@ import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
+
 # Load your updated master data
 url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
 data = pd.read_excel(url)
@@ -11,6 +12,14 @@ data = pd.read_excel(url)
 # Normalize columns to ensure all required fields exist
 required_columns = ['state', 'city', 'walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'emp_score', 'positive', 'negative']
 assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
+
+# Min-max normalization (for scoring)
+walk_min, walk_max = data['walk_score'].min(), data['walk_score'].max()
+cost_min, cost_max = data['cost_score'].min(), data['cost_score'].max()
+diversity_min, diversity_max = data['diversity_score'].min(), data['diversity_score'].max()
+politics_min, politics_max = data['politics_score'].min(), data['politics_score'].max()
+wfh_min, wfh_max = data['wfh_score'].min(), data['wfh_score'].max()
+emp_min, emp_max = data['emp_score'].min(), data['emp_score'].max()  # LOWER is better
 
 @app.route('/', methods=['GET'])
 def home():
@@ -42,23 +51,29 @@ def match():
         for _, row in data.iterrows():
             score = 0
 
-            # Regular categories (0-100 scales)
-            score += safety * (row['walk_score'] / 100)  # Walk Score proxy for safety
-            score += employment * (row['emp_score'] / 100)
-            score += diversity * (row['diversity_score'] / 100)
-            score += affordability * (row['cost_score'] / 100)
-            score += walkability * (row['walk_score'] / 100)
-            score += remote_work * (row['wfh_score'] / 100)
+            # Normalize features
+            walk_norm = (row['walk_score'] - walk_min) / (walk_max - walk_min)
+            cost_norm = (row['cost_score'] - cost_min) / (cost_max - cost_min)
+            diversity_norm = (row['diversity_score'] - diversity_min) / (diversity_max - diversity_min)
+            politics_norm = (row['politics_score'] - politics_min) / (politics_max - politics_min)
+            wfh_norm = (row['wfh_score'] - wfh_min) / (wfh_max - wfh_min)
+            emp_norm = 1 - (row['emp_score'] - emp_min) / (emp_max - emp_min)  # REVERSED
 
-            # Density (1 to 5 scale, no importance now)
+            # Regular scoring (normalized 0-1)
+            score += safety * walk_norm
+            score += employment * emp_norm
+            score += diversity * diversity_norm
+            score += affordability * cost_norm
+            score += walkability * walk_norm
+            score += remote_work * wfh_norm
+
+            # Density (difference based)
             density_difference = abs(density_preference - row['density_score'])
             density_points = max(0, 100 - (density_difference * 20))
             score += (density_points / 100)
 
-            # Politics (1 to 5 scale, no importance now)
-            politics_mapped_user = politics_preference  # 0-4 from slider directly
-            politics_mapped_row = row['politics_score']  # Already 1-5 scale in data
-            politics_difference = abs(politics_mapped_user - politics_mapped_row)
+            # Politics (now like regular categories!)
+            politics_difference = abs(politics_preference - row['politics_score'])
             politics_points = max(0, 100 - (politics_difference * 20))
             score += (politics_points / 100)
 
