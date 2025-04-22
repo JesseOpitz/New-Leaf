@@ -84,13 +84,12 @@ def match():
             score += pol_score
 
             scores.append({
-                "state": row['state'],
-                "city": row['city'],
-                "county": row['county'],
-                "score": score,
-                "positive": row['positive'],
-                "negative": row['negative']
-            })
+                "state": str(row['state']),
+                "city": str(row['city']),
+                "score": float(score),
+                "positive": str(row['positive']),
+                "negative": str(row['negative'])
+})
 
         # Sort by score descending
         scores = sorted(scores, key=lambda x: x['score'], reverse=True)
