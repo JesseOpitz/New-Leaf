@@ -33,11 +33,9 @@ def match():
         walkability = int(answers[4])
         remote_work = int(answers[5])
         density_preference = int(answers[6])
-        density_importance = int(answers[7])
-        politics_preference = int(answers[8])
-        politics_importance = int(answers[9])
-        city_count = int(answers[10])
-        show_avoid = answers[11]
+        politics_preference = int(answers[7])
+        city_count = int(answers[8])
+        show_avoid = answers[9]
 
         scores = []
 
@@ -52,17 +50,17 @@ def match():
             score += walkability * (row['walk_score'] / 100)
             score += remote_work * (row['wfh_score'] / 100)
 
-            # Density (1 to 5 scale)
+            # Density (1 to 5 scale, no importance now)
             density_difference = abs(density_preference - row['density_score'])
             density_points = max(0, 100 - (density_difference * 20))
-            score += density_importance * (density_points / 100)
+            score += (density_points / 100)
 
-            # Politics (1 to 5 scaled manually, assuming you scaled already)
-            politics_mapped_user = politics_preference  # from 0-8 to 1-5
-            politics_mapped_row = row['politics_score']  # Already 1-5
+            # Politics (1 to 5 scale, no importance now)
+            politics_mapped_user = politics_preference  # 0-4 from slider directly
+            politics_mapped_row = row['politics_score']  # Already 1-5 scale in data
             politics_difference = abs(politics_mapped_user - politics_mapped_row)
             politics_points = max(0, 100 - (politics_difference * 20))
-            score += politics_importance * (politics_points / 100)
+            score += (politics_points / 100)
 
             scores.append({
                 "state": row['state'],
