@@ -6,22 +6,29 @@ app = Flask(__name__)
 CORS(app)
 
 # Load your updated master data
-url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
+url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/masterfile.xlsx"
 data = pd.read_excel(url)
 
 # Normalize columns to ensure all required fields exist
-required_columns = ['state', 'city', 'walk_score', 'cost_score', 'density_score', 'diversity_score', 'politics_score', 'wfh_score', 'crime_score', 'emp_score', 'positive', 'negative']
+required_columns = [
+    'state', 'city', 'county',
+    'walk_rank', 'cost_rank', 'density_rank', 'div_rank',
+    'pol_rank', 'wfh_rank', 'crime_rank', 'emp_rank',
+    'positive', 'negative'
+]
 assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
 
-# Min-max normalization (for scoring)
-walk_min, walk_max = data['walk_score'].min(), data['walk_score'].max()
-cost_min, cost_max = data['cost_score'].min(), data['cost_score'].max()
-diversity_min, diversity_max = data['diversity_score'].min(), data['diversity_score'].max()
-politics_min, politics_max = data['politics_score'].min(), data['politics_score'].max()
-wfh_min, wfh_max = data['wfh_score'].min(), data['wfh_score'].max()
-emp_min, emp_max = data['emp_score'].min(), data['emp_score'].max()
-safety_min, safety_max = data['crime_score'].min(), data['crime_score'].max()
-density_min, density_max = data['density_score'].min(), data['density_score'].max()
+# Set max rank for normalization (highest possible rank)
+max_rank = max(
+    data['walk_rank'].max(),
+    data['cost_rank'].max(),
+    data['density_rank'].max(),
+    data['div_rank'].max(),
+    data['pol_rank'].max(),
+    data['wfh_rank'].max(),
+    data['crime_rank'].max(),
+    data['emp_rank'].max()
+)
 
 @app.route('/', methods=['GET'])
 def home():
@@ -50,38 +57,42 @@ def match():
 
         scores = []
 
+        # politics multipliers as per your new formula
+        politics_multipliers = [9, 7, 5, 3, 1, 3, 5, 7, 9]
+
         for _, row in data.iterrows():
             score = 0
 
-            # Normalize features
-            walk_norm = (row['walk_score'] - walk_min) / (walk_max - walk_min)
-            cost_norm = (row['cost_score'] - cost_min) / (cost_max - cost_min)
-            diversity_norm = (row['diversity_score'] - diversity_min) / (diversity_max - diversity_min)
-            politics_norm = (row['politics_score'] - politics_min) / (politics_max - politics_min)
-            wfh_norm = (row['wfh_score'] - wfh_min) / (wfh_max - wfh_min)
-            emp_norm = (row['emp_score'] - emp_min) / (emp_max - emp_min)
-            safety_norm = (row['crime_score'] - safety_min) / (safety_max - safety_min)
-            density_norm = (row['density_score'] - density_min) / (density_max - density_min)
+            # Score regular categories (reversed: lower rank = better)
+            score += safety * (max_rank - row['crime_rank'])
+            score += employment * (max_rank - row['emp_rank'])
+            score += diversity * (max_rank - row['div_rank'])
+            score += affordability * (max_rank - row['cost_rank'])
+            score += walkability * (max_rank - row['walk_rank'])
+            score += remote_work * (max_rank - row['wfh_rank'])
 
-            # Regular scoring (normalized 0-1)
-            score += safety * safety_norm
-            score += employment * emp_norm
-            score += diversity * diversity_norm
-            score += affordability * cost_norm
-            score += walkability * walk_norm
-            score += remote_work * wfh_norm
-            score += politics_preference * politics_norm
-            score += density_preference * density_norm
+            # Score density (direct match: lower distance is better)
+            density_difference = abs(density_preference - row['density_rank'])
+            density_score = max(0, max_rank - density_difference)
+            score += density_score
+
+            # Score politics using custom curve
+            if politics_preference <= 4:
+                pol_score = (max_rank - row['pol_rank']) * politics_multipliers[politics_preference]
+            else:
+                pol_score = row['pol_rank'] * politics_multipliers[politics_preference]
+            score += pol_score
 
             scores.append({
                 "state": row['state'],
                 "city": row['city'],
+                "county": row['county'],
                 "score": score,
                 "positive": row['positive'],
                 "negative": row['negative']
             })
 
-        # Sort scores highest first
+        # Sort by score descending
         scores = sorted(scores, key=lambda x: x['score'], reverse=True)
 
         good_matches = scores[:city_count]
