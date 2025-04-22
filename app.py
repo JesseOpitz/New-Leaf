@@ -1,8 +1,9 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import pandas as pd
 
 app = Flask(__name__)
-
+CORS(app)
 # Load your updated master data
 url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/master_data.xlsx"
 data = pd.read_excel(url)
