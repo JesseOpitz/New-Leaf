@@ -14,7 +14,7 @@ required_columns = [
     'state', 'city', 'county',
     'walk_rank', 'cost_rank', 'density_rank', 'div_rank',
     'pol_rank', 'wfh_rank', 'crime_rank', 'emp_rank',
-    'positive', 'negative'
+    'positive', 'negative', 'Wikipedia_URL'
 ]
 assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
 
@@ -82,6 +82,15 @@ def match():
             else:
                 pol_score = row['pol_rank'] * politics_multipliers[politics_preference]
             score += pol_score
+
+            scores.append({
+                "state": str(row['state']),
+                "city": str(row['city']),
+                "score": float(score),
+                "positive": str(row['positive']),
+                "negative": str(row['negative']),
+                "Wikipedia_URL": str(row['Wikipedia_URL']) if pd.notna(row['Wikipedia_URL']) else ""
+})
 
             scores.append({
                 "state": str(row['state']),
