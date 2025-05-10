@@ -9,7 +9,7 @@ CORS(app)
 url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/masterfile.xlsx"
 data = pd.read_excel(url)
 
-# Normalize columns to ensure all required fields exist
+# Ensure required columns are present
 required_columns = [
     'state', 'city', 'county',
     'walk_rank', 'cost_rank', 'density_rank', 'div_rank',
@@ -18,7 +18,7 @@ required_columns = [
 ]
 assert all(col in data.columns for col in required_columns), "Missing columns in Master Data File!"
 
-# Set max rank for normalization (highest possible rank)
+# Set max rank for normalization
 max_rank = max(
     data['walk_rank'].max(),
     data['cost_rank'].max(),
@@ -41,9 +41,8 @@ def match():
     if not content or 'answers' not in content:
         return jsonify({"error": "No answers provided"}), 400
 
-    answers = content['answers']
-
     try:
+        answers = content['answers']
         safety = int(answers[0])
         employment = int(answers[1])
         diversity = int(answers[2])
@@ -51,19 +50,19 @@ def match():
         walkability = int(answers[4])
         remote_work = int(answers[5])
         density_preference = int(answers[6])
-        politics_preference = int(answers[7])
+        politics_preference = int(answers[7])  # 0 (conservative) to 8 (liberal)
         city_count = int(answers[8])
         show_avoid = answers[9]
 
-        scores = []
+        # Normalize user political preference to [-1, 1]
+        normalized_user_pref = (politics_preference - 4) / 4
 
-        # politics multipliers as per your new formula
-        politics_multipliers = [9, 7, 5, 3, 1, 3, 5, 7, 9]
+        scores = []
 
         for _, row in data.iterrows():
             score = 0
 
-            # Score regular categories (reversed: lower rank = better)
+            # Category scores (lower rank is better)
             score += safety * (max_rank - row['crime_rank'])
             score += employment * (max_rank - row['emp_rank'])
             score += diversity * (max_rank - row['div_rank'])
@@ -71,16 +70,16 @@ def match():
             score += walkability * (max_rank - row['walk_rank'])
             score += remote_work * (max_rank - row['wfh_rank'])
 
-            # Score density (direct match: lower distance is better)
+            # Density: score based on distance from user preference
             density_difference = abs(density_preference - row['density_rank'])
-            density_score = max(0, max_rank - density_difference)
-            score += density_score
+            score += max_rank - density_difference
 
-            # Score politics using custom curve
-            if politics_preference <= 4:
-                pol_score = (max_rank - row['pol_rank']) * politics_multipliers[politics_preference]
-            else:
-                pol_score = row['pol_rank'] * politics_multipliers[politics_preference]
+            # Politics: normalize city political leaning to [-1, 1]
+            normalized_city_pol = (max_rank - row['pol_rank']) / (max_rank - 1)  # [0,1]
+            normalized_city_pol = (normalized_city_pol - 0.5) * 2  # [-1,1]
+
+            # Closer match = higher score
+            pol_score = (1 - abs(normalized_user_pref - normalized_city_pol)) * 100
             score += pol_score
 
             scores.append({
@@ -90,17 +89,9 @@ def match():
                 "positive": str(row['positive']),
                 "negative": str(row['negative']),
                 "Wikipedia_URL": str(row['Wikipedia_URL']) if pd.notna(row['Wikipedia_URL']) else ""
-})
+            })
 
-            scores.append({
-                "state": str(row['state']),
-                "city": str(row['city']),
-                "score": float(score),
-                "positive": str(row['positive']),
-                "negative": str(row['negative'])
-})
-
-        # Sort by score descending
+        # Sort cities by score descending
         scores = sorted(scores, key=lambda x: x['score'], reverse=True)
 
         good_matches = scores[:city_count]
