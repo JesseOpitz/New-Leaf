@@ -1,11 +1,17 @@
+import os
+import json
+import pandas as pd
+import openai
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pandas as pd
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# Load your updated master data
+# Set OpenAI API key from environment
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+
+# Load your master data
 url = "https://raw.githubusercontent.com/JesseOpitz/New-Leaf/main/masterfile.xlsx"
 data = pd.read_excel(url)
 
@@ -34,6 +40,68 @@ max_rank = max(
 def home():
     return "New Leaf API is Running!"
 
+@app.route('/describe', methods=['POST', 'OPTIONS'])
+def describe():
+    if request.method == 'OPTIONS':
+        return '', 204  # CORS preflight response
+
+    content = request.get_json()
+    user_input = content.get("description", "").strip()
+
+    if not user_input:
+        return jsonify({"error": "Description cannot be empty"}), 400
+
+    prompt = f"""
+User provided this city preference description:
+\"\"\"{user_input}\"\"\"
+
+1. Based on this, rate the following categories from 0 (not mentioned) to 8 (very important):
+- Safety
+- Employment
+- Diversity
+- Affordability
+- Walkability
+- Remote Work
+- Density (0=rural, 4=urban)
+- Politics (0=very conservative, 8=very liberal)
+
+2. Then write a friendly 1-2 sentence summary of what kind of place the user is looking for.
+
+If the description is too vague to rate, say: "insufficient detail".
+
+Return only a JSON object like:
+{{
+  "scores": [int, int, int, int, int, int, int, int], 
+  "summary": "..."
+}}
+"""
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7
+        )
+
+        raw_output = response.choices[0].message.content.strip()
+        result = json.loads(raw_output)
+
+        if result.get("summary", "").lower().startswith("insufficient"):
+            return jsonify({
+                "error": "Your description didn't include enough detail to generate matches. Try mentioning preferences like safety, affordability, diversity, etc."
+            }), 400
+
+        if not isinstance(result.get("scores"), list) or len(result["scores"]) != 8:
+            return jsonify({"error": "AI response was incomplete. Please rephrase your description."}), 400
+
+        return jsonify({
+            "scores": result["scores"],
+            "summary": result["summary"]
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/match', methods=['POST'])
 def match():
     content = request.get_json()
@@ -50,19 +118,15 @@ def match():
         walkability = int(answers[4])
         remote_work = int(answers[5])
         density_preference = int(answers[6])
-        politics_preference = int(answers[7])  # 0 (conservative) to 8 (liberal)
+        politics_preference = int(answers[7])
         city_count = int(answers[8])
         show_avoid = answers[9]
 
-        # Normalize user political preference to [-1, 1]
         normalized_user_pref = (politics_preference - 4) / 4
-
         scores = []
 
         for _, row in data.iterrows():
             score = 0
-
-            # Category scores (lower rank is better)
             score += safety * (max_rank - row['crime_rank'])
             score += employment * (max_rank - row['emp_rank'])
             score += diversity * (max_rank - row['div_rank'])
@@ -70,15 +134,12 @@ def match():
             score += walkability * (max_rank - row['walk_rank'])
             score += remote_work * (max_rank - row['wfh_rank'])
 
-            # Density: score based on distance from user preference
-            density_difference = abs(density_preference - row['density_rank'])
-            score += max_rank - density_difference
+            density_diff = abs(density_preference - row['density_rank'])
+            score += max_rank - density_diff
 
-            # Politics: normalize city political leaning to [-1, 1]
-            normalized_city_pol = (max_rank - row['pol_rank']) / (max_rank - 1)  # [0,1]
-            normalized_city_pol = (normalized_city_pol - 0.5) * 2  # [-1,1]
+            normalized_city_pol = (max_rank - row['pol_rank']) / (max_rank - 1)
+            normalized_city_pol = (normalized_city_pol - 0.5) * 2
 
-            # Closer match = higher score
             pol_score = (1 - abs(normalized_user_pref - normalized_city_pol)) * 100
             score += pol_score
 
@@ -91,9 +152,7 @@ def match():
                 "Wikipedia_URL": str(row['Wikipedia_URL']) if pd.notna(row['Wikipedia_URL']) else ""
             })
 
-        # Sort cities by score descending
         scores = sorted(scores, key=lambda x: x['score'], reverse=True)
-
         good_matches = scores[:city_count]
         bad_matches = scores[-city_count:] if show_avoid else []
 
